@@ -11,7 +11,7 @@ import os
 import secrets
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http import cookies
 from urllib.parse import parse_qs, quote_plus
 from wsgiref.simple_server import make_server
@@ -256,6 +256,60 @@ def user_stats(user_id: int):
     best, avg = cur.fetchone()
     conn.close()
     return {"today": today, "week": week, "best": best, "avg": int(avg or 0)}
+
+
+def activity_insights(user_id: int):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT DATE(end_ts, 'unixepoch') AS day_utc, COALESCE(SUM(duration_seconds), 0) AS total
+        FROM toilet_sessions
+        WHERE user_id = ? AND end_ts IS NOT NULL
+        GROUP BY day_utc
+        ORDER BY day_utc ASC
+        """,
+        (user_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    daily_totals = {row["day_utc"]: int(row["total"] or 0) for row in rows}
+    if not daily_totals:
+        return {"streak_current": 0, "streak_best": 0, "last_7_days": []}
+
+    days = sorted(daily_totals.keys())
+    best_streak = 1
+    running = 1
+    for idx in range(1, len(days)):
+        prev = datetime.strptime(days[idx - 1], "%Y-%m-%d").date()
+        current = datetime.strptime(days[idx], "%Y-%m-%d").date()
+        if current - prev == timedelta(days=1):
+            running += 1
+        else:
+            running = 1
+        best_streak = max(best_streak, running)
+
+    current_streak = 0
+    today = datetime.now(timezone.utc).date()
+    cursor = today
+    while cursor.strftime("%Y-%m-%d") in daily_totals:
+        current_streak += 1
+        cursor -= timedelta(days=1)
+
+    last_7_days = []
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        key = day.strftime("%Y-%m-%d")
+        last_7_days.append(
+            {
+                "date": key,
+                "label": day.strftime("%a"),
+                "seconds": daily_totals.get(key, 0),
+            }
+        )
+
+    return {"streak_current": current_streak, "streak_best": best_streak, "last_7_days": last_7_days}
 
 
 def badges(total: int, sessions: int, best: int):
@@ -518,8 +572,13 @@ def profile(environ, start_response, user):
 
     active = get_active_session(user["id"])
     stats = user_stats(user["id"])
+    insights = activity_insights(user["id"])
     goal_pct = min(100, round((stats["today"] / max(1, user["daily_goal_seconds"])) * 100))
     badge_html = "".join(f"<span class='badge'>{esc(b)}</span>" for b in badges(user["total_seconds"], user["sessions_count"], stats["best"])) or "<span class='label'>Noch keine Badges.</span>"
+    week_bars = "".join(
+        f"<div><div class='label'>{esc(d['label'])}</div><div class='value'>{format_seconds(d['seconds'])}</div></div>"
+        for d in insights["last_7_days"]
+    )
 
     current = "<p>Keine aktive Session.</p><form method='POST' action='/start'><button>Session starten</button></form>"
     if active:
@@ -541,8 +600,14 @@ def profile(environ, start_response, user):
         <div><div class='label'>Best Session</div><div class='value'>{format_seconds(stats['best'])}</div></div>
         <div><div class='label'>Heute</div><div class='value'>{format_seconds(stats['today'])}</div></div>
         <div><div class='label'>7 Tage</div><div class='value'>{format_seconds(stats['week'])}</div></div>
+        <div><div class='label'>Streak aktuell</div><div class='value'>{insights['streak_current']} Tage</div></div>
+        <div><div class='label'>Streak Best</div><div class='value'>{insights['streak_best']} Tage</div></div>
       </div>
       <p style='margin-top:10px'>Tagesziel: <b>{goal_pct}%</b> ({format_seconds(stats['today'])} / {format_seconds(user['daily_goal_seconds'])})</p>
+    </div>
+    <div class='card'>
+      <h3>7-Tage Aktivität</h3>
+      <div class='grid'>{week_bars}</div>
     </div>
     <div class='card'><h3>Status</h3>{current}</div>
     <div class='card'><h3>Badges</h3>{badge_html}</div>
@@ -747,6 +812,10 @@ def icon(environ, start_response, _user):
     return respond_bytes(start_response, svg.encode("utf-8"), "image/svg+xml; charset=utf-8")
 
 
+def health(environ, start_response, _user):
+    return respond_bytes(start_response, b"ok", "text/plain; charset=utf-8")
+
+
 def app(environ, start_response):
     init_db()
     method = environ.get("REQUEST_METHOD", "GET")
@@ -771,6 +840,7 @@ def app(environ, start_response):
         ("GET", "/manifest.webmanifest"): manifest,
         ("GET", "/sw.js"): service_worker,
         ("GET", "/icon.svg"): icon,
+        ("GET", "/health"): health,
     }
 
     handler = routes.get((method, path))
