@@ -17,7 +17,7 @@ Professionelles Jigsaw-Puzzle mit echter Kanten-Geometrie (Nasen/Buchten), Union
   - Größen: `4x4`, `5x5`, `6x6`, `8x8`, `10x10`
   - Themes: `aurora`, `sunset`, `ocean`, `mono`
   - Modi: `Casual` (größere Snap-Toleranz, Rotation aus), `Classic`, `Expert`
-  - Auflösungen: `1280x720`, `1366x768`, `1600x900`, `1920x1080`
+  - Auflösungen: `1280x720`, `1366x768`, `1600x900`, `1920x1080`, `1920x1200` (+ native Desktop-Auflösung, falls abweichend)
 - Prozedurale Textur (mit NumPy, fallback ohne NumPy).
 - 4 Spielstände (Slots) zum Speichern/Laden.
 - Wenn ein fortgesetztes Puzzle abgeschlossen wird, wird dessen aktiver Slot automatisch gelöscht.

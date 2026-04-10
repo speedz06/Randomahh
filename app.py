@@ -624,8 +624,15 @@ class MainGame:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("High-End Jigsaw Puzzle")
-        self.resolutions = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080)]
-        self.current_res_idx = 2
+        base_resolutions = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080), (1920, 1200)]
+        desktop_sizes = pygame.display.get_desktop_sizes()
+        if desktop_sizes:
+            # Laptop/Desktop-native Auflösung zusätzlich anbieten.
+            native = desktop_sizes[0]
+            if native not in base_resolutions:
+                base_resolutions.append(native)
+        self.resolutions = base_resolutions
+        self.current_res_idx = self.resolutions.index((1920, 1200)) if (1920, 1200) in self.resolutions else 2
         self.screen = pygame.display.set_mode(self.resolutions[self.current_res_idx])
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("segoeui", 22)
