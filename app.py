@@ -626,7 +626,9 @@ class MainGame:
         pygame.display.set_caption("High-End Jigsaw Puzzle")
         self.screen = pygame.display.set_mode((1400, 900))
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("consolas", 20)
+        self.font = pygame.font.SysFont("segoeui", 22)
+        self.font_small = pygame.font.SysFont("segoeui", 18)
+        self.font_title = pygame.font.SysFont("segoeui", 42, bold=True)
         self.piece_count_options = [4, 5, 6, 8, 10]
         self.themes = ["aurora", "sunset", "ocean", "mono"]
         self.modes = [
@@ -638,6 +640,7 @@ class MainGame:
         self.current_theme_idx = 0
         self.current_mode_idx = 1
         self.menu_cursor = 0
+        self.menu_click_targets: Dict[str, pygame.Rect] = {}
         self.manager: Optional[PuzzleManager] = None
         self.running = True
         self.state = self.STATE_MENU
@@ -744,37 +747,85 @@ class MainGame:
         self.screen.blit(text2, (8, 30))
 
     def _draw_menu(self):
-        self.screen.fill((18, 20, 28))
-        title = self.font.render("Puzzle Startmenü", True, (245, 245, 245))
-        self.screen.blit(title, (50, 40))
+        self.menu_click_targets.clear()
+        self.screen.fill((16, 18, 26))
+        panel = pygame.Rect(120, 70, 1160, 740)
+        pygame.draw.rect(self.screen, (29, 33, 46), panel, border_radius=24)
+        pygame.draw.rect(self.screen, (60, 72, 102), panel, width=2, border_radius=24)
+
+        title = self.font_title.render("Jigsaw Studio", True, (242, 245, 255))
+        subtitle = self.font.render("Moderne Startoberfläche mit klickbaren Optionen", True, (172, 184, 215))
+        self.screen.blit(title, (170, 110))
+        self.screen.blit(subtitle, (174, 166))
 
         count = self.piece_count_options[self.current_piece_idx]
         theme = self.themes[self.current_theme_idx]
         mode_name, _ = self.modes[self.current_mode_idx]
-        entries = [
-            f"Größe: {count}x{count}",
-            f"Theme: {theme}",
-            f"Modus: {mode_name}",
-            "ENTER: Neues Spiel starten",
-        ]
+        self._draw_option_row("Größe", f"{count} x {count}", 250, "size")
+        self._draw_option_row("Theme", theme, 325, "theme")
+        self._draw_option_row("Modus", mode_name, 400, "mode")
 
-        for i, line in enumerate(entries):
-            col = (255, 220, 140) if i == self.menu_cursor else (220, 228, 245)
-            txt = self.font.render(line, True, col)
-            self.screen.blit(txt, (50, 110 + i * 42))
+        start_rect = pygame.Rect(170, 495, 360, 58)
+        self._draw_button(start_rect, "Spiel starten", primary=True)
+        self.menu_click_targets["start"] = start_rect
 
-        hint = self.font.render("Links/Rechts ändern | Hoch/Runter wählen", True, (165, 180, 210))
-        self.screen.blit(hint, (50, 300))
+        hint = self.font_small.render(
+            "Keyboard: Links/Rechts ändern, Enter starten | Maus: alles klickbar",
+            True,
+            (160, 178, 214),
+        )
+        self.screen.blit(hint, (170, 575))
 
-        slot_y = 370
-        slot_title = self.font.render("Spielstände (1-4 zum Laden):", True, (210, 220, 240))
-        self.screen.blit(slot_title, (50, slot_y))
+        slot_title = self.font.render("Spielstände", True, (230, 236, 249))
+        self.screen.blit(slot_title, (760, 250))
         for s in range(1, 5):
-            status = "belegt" if self._slot_exists(s) else "leer"
-            txt = self.font.render(f"Slot {s}: {status}", True, (190, 200, 220))
-            self.screen.blit(txt, (70, slot_y + 36 + s * 28))
+            exists = self._slot_exists(s)
+            label = f"Slot {s} • {'Fortsetzen' if exists else 'Leer'}"
+            rect = pygame.Rect(760, 300 + (s - 1) * 92, 380, 70)
+            self._draw_button(rect, label, enabled=exists)
+            self.menu_click_targets[f"slot_{s}"] = rect
+            small = self.font_small.render(f"Klick zum Laden ({s})", True, (150, 166, 198))
+            self.screen.blit(small, (780, 342 + (s - 1) * 92))
+
+    def _draw_button(self, rect: pygame.Rect, text: str, primary: bool = False, enabled: bool = True):
+        mouse = pygame.mouse.get_pos()
+        hovered = rect.collidepoint(mouse)
+        if not enabled:
+            bg = (58, 62, 77)
+            fg = (150, 154, 170)
+        elif primary:
+            bg = (82, 118, 220) if hovered else (70, 104, 200)
+            fg = (248, 250, 255)
+        else:
+            bg = (71, 82, 112) if hovered else (60, 70, 96)
+            fg = (232, 238, 250)
+        pygame.draw.rect(self.screen, bg, rect, border_radius=12)
+        pygame.draw.rect(self.screen, (98, 112, 150), rect, width=2, border_radius=12)
+        txt = self.font.render(text, True, fg)
+        self.screen.blit(txt, txt.get_rect(center=rect.center))
+
+    def _draw_option_row(self, name: str, value: str, y: int, key: str):
+        label = self.font.render(name, True, (205, 220, 245))
+        self.screen.blit(label, (170, y + 13))
+
+        left_rect = pygame.Rect(330, y, 48, 48)
+        right_rect = pygame.Rect(690, y, 48, 48)
+        value_rect = pygame.Rect(390, y, 290, 48)
+
+        self._draw_button(left_rect, "‹")
+        self._draw_button(right_rect, "›")
+        pygame.draw.rect(self.screen, (50, 58, 82), value_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (90, 104, 140), value_rect, width=2, border_radius=10)
+        text = self.font.render(value, True, (236, 241, 252))
+        self.screen.blit(text, text.get_rect(center=value_rect.center))
+
+        self.menu_click_targets[f"{key}_left"] = left_rect
+        self.menu_click_targets[f"{key}_right"] = right_rect
 
     def _handle_menu_event(self, event: pygame.event.Event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self._handle_menu_click(event.pos)
+            return
         if event.type != pygame.KEYDOWN:
             return
         key_to_slot = {pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4}
@@ -795,6 +846,33 @@ class MainGame:
             if self._load_slot(slot):
                 self.manager.draw_full(self.screen)
                 pygame.display.flip()
+
+    def _handle_menu_click(self, pos: Tuple[int, int]):
+        for key, rect in self.menu_click_targets.items():
+            if not rect.collidepoint(pos):
+                continue
+            if key == "start":
+                self._start_new_game()
+                self.manager.draw_full(self.screen)
+                pygame.display.flip()
+            elif key == "size_left":
+                self.current_piece_idx = (self.current_piece_idx - 1) % len(self.piece_count_options)
+            elif key == "size_right":
+                self.current_piece_idx = (self.current_piece_idx + 1) % len(self.piece_count_options)
+            elif key == "theme_left":
+                self.current_theme_idx = (self.current_theme_idx - 1) % len(self.themes)
+            elif key == "theme_right":
+                self.current_theme_idx = (self.current_theme_idx + 1) % len(self.themes)
+            elif key == "mode_left":
+                self.current_mode_idx = (self.current_mode_idx - 1) % len(self.modes)
+            elif key == "mode_right":
+                self.current_mode_idx = (self.current_mode_idx + 1) % len(self.modes)
+            elif key.startswith("slot_"):
+                slot = int(key.split("_")[1])
+                if self._load_slot(slot):
+                    self.manager.draw_full(self.screen)
+                    pygame.display.flip()
+            return
 
     def _menu_adjust(self, direction: int):
         if self.menu_cursor == 0:

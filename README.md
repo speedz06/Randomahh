@@ -12,6 +12,7 @@ Professionelles Jigsaw-Puzzle mit echter Kanten-Geometrie (Nasen/Buchten), Union
 - Rotation per Rechtsklick (Snapping nur bei `0°`).
 - Dirty-Rect-Rendering während Drag für stabile FPS.
 - Ghost-Image-Hilfe per `H`.
+- Modernes, klickbares Startmenü (UI statt nur Tastatur):
 - Startmenü vor Spielbeginn für Größe/Theme/Modus:
   - Größen: `4x4`, `5x5`, `6x6`, `8x8`, `10x10`
   - Themes: `aurora`, `sunset`, `ocean`, `mono`
@@ -37,6 +38,7 @@ python3 app.py
 
 ### Startmenü
 
+- **Maus**: Klickbare Buttons für Größe, Theme, Modus, Start und Slot-Laden
 - **Hoch/Runter**: Menüpunkt wählen
 - **Links/Rechts**: Wert ändern (Größe/Theme/Modus)
 - **Enter**: Neues Spiel mit den gewählten Einstellungen starten
