@@ -36,8 +36,10 @@ class PuzzlePiece:
         self.id = pid
         self.key = key
         self.target_top_left = Vec2(target_top_left)
-        self.image = image.convert_alpha()
-        self.mask_surface = mask_surface.convert_alpha()
+        self.base_image = image.convert_alpha()
+        self.base_mask = mask_surface.convert_alpha()
+        self.image = self.base_image
+        self.mask_surface = self.base_mask
         self.local_offset = Vec2(local_offset)
         self.edge_tabs = edge_tabs
 
@@ -53,6 +55,14 @@ class PuzzlePiece:
         shadow = self.mask_surface.copy()
         shadow.fill((0, 0, 0, 90), special_flags=pygame.BLEND_RGBA_MULT)
         return shadow
+
+    def apply_rotation(self, angle: int):
+        old_center = self.rect.center
+        self.rotation = angle % 360
+        self.image = pygame.transform.rotate(self.base_image, self.rotation)
+        self.mask_surface = pygame.transform.rotate(self.base_mask, self.rotation)
+        self.cached_shadow = self._build_shadow()
+        self.pos = Vec2(self.image.get_rect(center=old_center).topleft)
 
     @property
     def rect(self) -> pygame.Rect:
@@ -235,21 +245,22 @@ class PuzzleManager:
             base = (np.sin(xv * 12.0) + np.cos(yv * 10.0) + np.sin((xv + yv) * 16.0))
             noise = np.random.normal(0.0, 0.35, (h, w))
             t = np.clip((base + noise + 3.0) / 6.0, 0, 1)
-            arr[..., 0] = (40 + 190 * t).astype(np.uint8)
-            arr[..., 1] = (55 + 140 * (1 - t)).astype(np.uint8)
-            arr[..., 2] = (100 + 120 * np.sin(t * math.pi)).astype(np.uint8)
+            # Absichtlich dunklere, kontrastreiche Palette, damit Teilkanten leichter erkennbar sind.
+            arr[..., 0] = (25 + 95 * t).astype(np.uint8)
+            arr[..., 1] = (30 + 80 * (1 - t)).astype(np.uint8)
+            arr[..., 2] = (45 + 105 * np.sin(t * math.pi)).astype(np.uint8)
             pygame.surfarray.blit_array(surf, np.transpose(arr, (1, 0, 2)))
         else:
-            surf.fill((38, 49, 75))
+            surf.fill((26, 30, 42))
             for _ in range(2800):
                 cx = random.randint(0, w)
                 cy = random.randint(0, h)
                 rad = random.randint(4, 28)
                 col = (
-                    random.randint(40, 220),
-                    random.randint(40, 220),
-                    random.randint(40, 220),
-                    random.randint(20, 70),
+                    random.randint(35, 140),
+                    random.randint(35, 130),
+                    random.randint(45, 150),
+                    random.randint(18, 55),
                 )
                 pygame.draw.circle(surf, col, (cx, cy), rad)
         return surf
@@ -380,7 +391,7 @@ class PuzzleManager:
         if selected is None:
             return
         piece = self.pieces[selected]
-        piece.rotation = (piece.rotation + 90) % 360
+        piece.apply_rotation(piece.rotation + 90)
 
     def _neighbor_id(self, key: PieceKey, dr: int, dc: int) -> Optional[int]:
         nr, nc = key.row + dr, key.col + dc
@@ -426,14 +437,14 @@ class PuzzleManager:
 
     # ----------------- Rendering -----------------
     def _draw_background_layer(self, screen: pygame.Surface):
-        screen.fill((24, 24, 28))
+        screen.fill((16, 17, 21))
         board_rect = pygame.Rect(
             int(self.board_origin.x),
             int(self.board_origin.y),
             self.cols * self.pw,
             self.rows * self.ph,
         )
-        pygame.draw.rect(screen, (32, 36, 42), board_rect.inflate(12, 12), border_radius=8)
+        pygame.draw.rect(screen, (23, 26, 34), board_rect.inflate(12, 12), border_radius=8)
         if self.ghost_enabled:
             screen.blit(self.ghost_image, board_rect.topleft)
 
@@ -463,7 +474,7 @@ class PuzzleManager:
 
         # Dirty-Rect: nur den betroffenen Bereich des Hintergrunds zurücksetzen.
         region = pygame.Surface((merged.width, merged.height), pygame.SRCALPHA)
-        region.fill((24, 24, 28))
+        region.fill((16, 17, 21))
 
         board_rect = pygame.Rect(
             int(self.board_origin.x),
@@ -474,7 +485,7 @@ class PuzzleManager:
         if merged.colliderect(board_rect.inflate(12, 12)):
             pygame.draw.rect(
                 region,
-                (32, 36, 42),
+                (23, 26, 34),
                 board_rect.inflate(12, 12).move(-merged.x, -merged.y),
                 border_radius=8,
             )
@@ -546,7 +557,7 @@ class PuzzleManager:
                 continue
             p = self.pieces[pid]
             p.pos = Vec2(item["x"], item["y"])
-            p.rotation = int(item.get("rotation", 0)) % 360
+            p.apply_rotation(int(item.get("rotation", 0)) % 360)
             root = int(item.get("cluster", pid))
             cluster_members.setdefault(root, []).append(pid)
 
