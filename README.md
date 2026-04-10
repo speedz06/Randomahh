@@ -12,6 +12,12 @@ Professionelles Jigsaw-Puzzle mit echter Kanten-Geometrie (Nasen/Buchten), Union
 - Rotation per Rechtsklick (Snapping nur bei `0°`).
 - Dirty-Rect-Rendering während Drag für stabile FPS.
 - Ghost-Image-Hilfe per `H`.
+- Umschaltbare Puzzle-Größen per `C`: `4x4`, `5x5`, `6x6`, `8x8`, `10x10`.
+- Umschaltbare Themes per `T`: `aurora`, `sunset`, `ocean`, `mono`.
+- Umschaltbare Modi per `M`:
+  - `Casual` (größere Snap-Toleranz, Rotation aus),
+  - `Classic`,
+  - `Expert` (kleinere Snap-Toleranz).
 - Prozedurale Textur (mit NumPy, fallback ohne NumPy).
 - Save/Load über `puzzle_save.json` (`S` / `L`).
 
@@ -29,3 +35,6 @@ python3 app.py
 - **S**: Fortschritt speichern
 - **L**: Fortschritt laden
 - **R**: Neues Puzzle
+- **C**: Puzzlegröße wechseln (4x4 / 5x5 / 6x6 / 8x8 / 10x10)
+- **T**: Theme wechseln
+- **M**: Modus wechseln

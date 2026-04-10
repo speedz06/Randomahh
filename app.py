@@ -89,16 +89,27 @@ class PuzzleManager:
     EDGE_BOTTOM = "bottom"
     EDGE_LEFT = "left"
 
-    def __init__(self, board_size=(5, 4), piece_size=(110, 110), screen_size=(1400, 900)):
+    def __init__(
+        self,
+        board_size=(5, 4),
+        piece_size=(110, 110),
+        screen_size=(1400, 900),
+        theme: str = "aurora",
+        mode_name: str = "Classic",
+        mode_cfg: Optional[Dict[str, float]] = None,
+    ):
         self.cols, self.rows = board_size
         self.pw, self.ph = piece_size
         self.screen_w, self.screen_h = screen_size
+        self.theme = theme
+        self.mode_name = mode_name
+        self.mode_cfg = mode_cfg or {"snap_threshold": 22, "rotation_enabled": 1}
         self.tab_radius = int(min(self.pw, self.ph) * 0.18)
         self.tab_depth = int(min(self.pw, self.ph) * 0.32)
         self.edge_samples = 16
 
         self.ghost_enabled = False
-        self.snap_threshold = 22
+        self.snap_threshold = int(self.mode_cfg["snap_threshold"])
 
         self.pieces: Dict[int, PuzzlePiece] = {}
         self.parent: Dict[int, int] = {}
@@ -114,7 +125,7 @@ class PuzzleManager:
             (self.screen_h - self.rows * self.ph) // 2,
         )
 
-        self.background = self._create_background_texture(self.cols * self.pw, self.rows * self.ph)
+        self.background = self._create_background_texture(self.cols * self.pw, self.rows * self.ph, self.theme)
         self.ghost_image = self.background.copy()
         self.ghost_image.set_alpha(85)
 
@@ -235,9 +246,19 @@ class PuzzleManager:
         return mask_surf, (margin, margin)
 
     # ----------------- Aufbau -----------------
-    def _create_background_texture(self, w: int, h: int) -> pygame.Surface:
+    def _theme_palette(self, theme: str):
+        palettes = {
+            "aurora": ((70, 220), (80, 220), (95, 225)),
+            "sunset": ((110, 245), (70, 200), (70, 170)),
+            "ocean": ((40, 130), (95, 220), (120, 245)),
+            "mono": ((80, 210), (80, 210), (80, 210)),
+        }
+        return palettes.get(theme, palettes["aurora"])
+
+    def _create_background_texture(self, w: int, h: int, theme: str) -> pygame.Surface:
         # Keine per-pixel Transparenz im Quellbild: alle Puzzelteile sollen voll deckend sein.
         surf = pygame.Surface((w, h))
+        (r_min, r_max), (g_min, g_max), (b_min, b_max) = self._theme_palette(theme)
         if np is not None:
             arr = np.zeros((h, w, 3), dtype=np.uint8)
             x = np.linspace(0, 1, w)
@@ -247,20 +268,20 @@ class PuzzleManager:
             noise = np.random.normal(0.0, 0.35, (h, w))
             t = np.clip((base + noise + 3.0) / 6.0, 0, 1)
             # Gut sichtbare Palette mit mehr Helligkeit + weichem Kontrast.
-            arr[..., 0] = (70 + 150 * t).astype(np.uint8)
-            arr[..., 1] = (80 + 140 * (1 - t)).astype(np.uint8)
-            arr[..., 2] = (95 + 130 * np.sin(t * math.pi)).astype(np.uint8)
+            arr[..., 0] = (r_min + (r_max - r_min) * t).astype(np.uint8)
+            arr[..., 1] = (g_min + (g_max - g_min) * (1 - t)).astype(np.uint8)
+            arr[..., 2] = (b_min + (b_max - b_min) * np.sin(t * math.pi)).astype(np.uint8)
             pygame.surfarray.blit_array(surf, np.transpose(arr, (1, 0, 2)))
         else:
-            surf.fill((64, 70, 90))
+            surf.fill((r_min, g_min, b_min))
             for _ in range(2800):
                 cx = random.randint(0, w)
                 cy = random.randint(0, h)
                 rad = random.randint(4, 28)
                 col = (
-                    random.randint(80, 210),
-                    random.randint(70, 210),
-                    random.randint(90, 220),
+                    random.randint(r_min, r_max),
+                    random.randint(g_min, g_max),
+                    random.randint(b_min, b_max),
                 )
                 pygame.draw.circle(surf, col, (cx, cy), rad)
         return surf
@@ -399,6 +420,8 @@ class PuzzleManager:
         self.drag_cluster_id = None
 
     def rotate_piece(self, mouse_pos: Tuple[int, int]):
+        if not self.mode_cfg.get("rotation_enabled", 1):
+            return
         selected = self._top_piece_at(mouse_pos)
         if selected is None:
             return
@@ -597,9 +620,35 @@ class MainGame:
         self.screen = pygame.display.set_mode((1400, 900))
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("consolas", 20)
-        self.manager = PuzzleManager(board_size=(10, 7), piece_size=(90, 90), screen_size=(1400, 900))
+        self.piece_count_options = [4, 5, 6, 8, 10]
+        self.themes = ["aurora", "sunset", "ocean", "mono"]
+        self.modes = [
+            ("Casual", {"snap_threshold": 34, "rotation_enabled": 0}),
+            ("Classic", {"snap_threshold": 24, "rotation_enabled": 1}),
+            ("Expert", {"snap_threshold": 14, "rotation_enabled": 1}),
+        ]
+        self.current_piece_idx = 2  # default 6x6
+        self.current_theme_idx = 0
+        self.current_mode_idx = 1
+        self.manager = self._build_manager()
         self.running = True
         self.save_path = "puzzle_save.json"
+
+    def _build_manager(self) -> PuzzleManager:
+        count = self.piece_count_options[self.current_piece_idx]
+        mode_name, mode_cfg = self.modes[self.current_mode_idx]
+        theme = self.themes[self.current_theme_idx]
+
+        board_pixels = 780
+        piece_px = max(44, board_pixels // count)
+        return PuzzleManager(
+            board_size=(count, count),
+            piece_size=(piece_px, piece_px),
+            screen_size=(1400, 900),
+            theme=theme,
+            mode_name=mode_name,
+            mode_cfg=mode_cfg,
+        )
 
     def run(self):
         self.manager.draw_full(self.screen)
@@ -639,7 +688,22 @@ class MainGame:
                         self.manager.draw_full(self.screen)
                         pygame.display.flip()
                     elif event.key == pygame.K_r:
-                        self.manager = PuzzleManager(board_size=(10, 7), piece_size=(90, 90), screen_size=(1400, 900))
+                        self.manager = self._build_manager()
+                        self.manager.draw_full(self.screen)
+                        pygame.display.flip()
+                    elif event.key == pygame.K_c:
+                        self.current_piece_idx = (self.current_piece_idx + 1) % len(self.piece_count_options)
+                        self.manager = self._build_manager()
+                        self.manager.draw_full(self.screen)
+                        pygame.display.flip()
+                    elif event.key == pygame.K_t:
+                        self.current_theme_idx = (self.current_theme_idx + 1) % len(self.themes)
+                        self.manager = self._build_manager()
+                        self.manager.draw_full(self.screen)
+                        pygame.display.flip()
+                    elif event.key == pygame.K_m:
+                        self.current_mode_idx = (self.current_mode_idx + 1) % len(self.modes)
+                        self.manager = self._build_manager()
                         self.manager.draw_full(self.screen)
                         pygame.display.flip()
 
@@ -647,7 +711,7 @@ class MainGame:
                 self.manager.draw_dirty(self.screen, dirty)
 
             self._draw_overlay()
-            pygame.display.update([pygame.Rect(0, 0, 700, 32)])
+            pygame.display.update([pygame.Rect(0, 0, 980, 58)])
 
             if self.manager.is_solved():
                 self._draw_win_banner()
@@ -657,12 +721,21 @@ class MainGame:
         pygame.quit()
 
     def _draw_overlay(self):
-        info = "LMB: ziehen | RMB: rotieren | H: Ghost | S/L: Save/Load | R: neu"
+        count = self.piece_count_options[self.current_piece_idx]
+        theme = self.themes[self.current_theme_idx]
+        mode_name, _ = self.modes[self.current_mode_idx]
+        info = (
+            "LMB: ziehen | RMB: rotieren | H: Ghost | S/L: Save/Load | "
+            "R: neu | C: Größe | T: Theme | M: Mode"
+        )
+        status = f"{count}x{count} | Theme: {theme} | Mode: {mode_name}"
         text = self.font.render(info, True, (240, 240, 240))
-        bg = pygame.Surface((text.get_width() + 16, 30), pygame.SRCALPHA)
+        text2 = self.font.render(status, True, (210, 225, 245))
+        bg = pygame.Surface((max(text.get_width(), text2.get_width()) + 16, 54), pygame.SRCALPHA)
         bg.fill((0, 0, 0, 130))
         self.screen.blit(bg, (0, 0))
         self.screen.blit(text, (8, 6))
+        self.screen.blit(text2, (8, 30))
 
     def _draw_win_banner(self):
         text = self.font.render("Puzzle abgeschlossen!", True, (255, 235, 120))
