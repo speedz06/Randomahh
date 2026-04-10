@@ -2,6 +2,7 @@ import json
 import math
 import os
 import random
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -11,6 +12,13 @@ try:
     import numpy as np
 except Exception:  # numpy ist optional
     np = None
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+except Exception:
+    tk = None
+    filedialog = None
 
 
 Vec2 = pygame.math.Vector2
@@ -97,13 +105,20 @@ class PuzzleManager:
         theme: str = "aurora",
         mode_name: str = "Classic",
         mode_cfg: Optional[Dict[str, float]] = None,
+        image_path: Optional[str] = None,
     ):
         self.cols, self.rows = board_size
         self.pw, self.ph = piece_size
         self.screen_w, self.screen_h = screen_size
         self.theme = theme
+        self.image_path = image_path
         self.mode_name = mode_name
-        self.mode_cfg = mode_cfg or {"snap_threshold": 22, "rotation_enabled": 1}
+        self.mode_cfg = mode_cfg or {
+            "snap_threshold": 22,
+            "rotation_enabled": 1,
+            "rotation_step": 90,
+            "randomize_rotation": 0,
+        }
         self.tab_radius = int(min(self.pw, self.ph) * 0.18)
         self.tab_depth = int(min(self.pw, self.ph) * 0.32)
         self.edge_samples = 16
@@ -125,9 +140,13 @@ class PuzzleManager:
             (self.screen_h - self.rows * self.ph) // 2,
         )
 
-        self.background = self._create_background_texture(self.cols * self.pw, self.rows * self.ph, self.theme)
+        self.background = self._create_background_texture(
+            self.cols * self.pw, self.rows * self.ph, self.theme, self.image_path
+        )
         self.ghost_image = self.background.copy()
         self.ghost_image.set_alpha(85)
+        self.snap_flash_until = 0
+        self.snap_flash_ids: Set[int] = set()
 
         self._build_pieces()
 
@@ -255,7 +274,24 @@ class PuzzleManager:
         }
         return palettes.get(theme, palettes["aurora"])
 
-    def _create_background_texture(self, w: int, h: int, theme: str) -> pygame.Surface:
+    def _create_background_texture(self, w: int, h: int, theme: str, image_path: Optional[str]) -> pygame.Surface:
+        if image_path and os.path.exists(image_path):
+            try:
+                img = pygame.image.load(image_path).convert()
+                src_w, src_h = img.get_size()
+                src_ratio = src_w / max(1, src_h)
+                dst_ratio = w / max(1, h)
+                if src_ratio > dst_ratio:
+                    new_w = int(src_h * dst_ratio)
+                    x = (src_w - new_w) // 2
+                    img = img.subsurface((x, 0, new_w, src_h))
+                else:
+                    new_h = int(src_w / dst_ratio)
+                    y = (src_h - new_h) // 2
+                    img = img.subsurface((0, y, src_w, new_h))
+                return pygame.transform.smoothscale(img, (w, h))
+            except Exception:
+                pass
         # Keine per-pixel Transparenz im Quellbild: alle Puzzelteile sollen voll deckend sein.
         surf = pygame.Surface((w, h))
         (r_min, r_max), (g_min, g_max), (b_min, b_max) = self._theme_palette(theme)
@@ -321,6 +357,9 @@ class PuzzleManager:
                 )
 
                 self.pieces[pid] = piece
+                if self.mode_cfg.get("randomize_rotation", 0):
+                    step = int(self.mode_cfg.get("rotation_step", 90))
+                    piece.apply_rotation(random.choice([0, step, (2 * step) % 360, (3 * step) % 360]))
                 self.parent[pid] = pid
                 self.clusters[pid] = PieceCluster(pid)
                 self.cluster_z_order.append(pid)
@@ -412,12 +451,13 @@ class PuzzleManager:
             dirty.append(piece.rect)
         return dirty
 
-    def end_drag(self):
+    def end_drag(self) -> bool:
         if self.drag_cluster_id is None:
-            return
+            return False
         cid = self.drag_cluster_id
-        self._snap_cluster(cid)
+        snapped = self._snap_cluster(cid)
         self.drag_cluster_id = None
+        return snapped
 
     def rotate_piece(self, mouse_pos: Tuple[int, int]):
         if not self.mode_cfg.get("rotation_enabled", 1):
@@ -426,7 +466,8 @@ class PuzzleManager:
         if selected is None:
             return
         piece = self.pieces[selected]
-        piece.apply_rotation(piece.rotation + 90)
+        step = int(self.mode_cfg.get("rotation_step", 90))
+        piece.apply_rotation(piece.rotation + step)
 
     def _neighbor_id(self, key: PieceKey, dr: int, dc: int) -> Optional[int]:
         nr, nc = key.row + dr, key.col + dc
@@ -434,7 +475,7 @@ class PuzzleManager:
             return None
         return nr * self.cols + nc
 
-    def _snap_cluster(self, cid: int):
+    def _snap_cluster(self, cid: int) -> bool:
         members = list(self.clusters[cid].members)
 
         for pid in members:
@@ -468,7 +509,10 @@ class PuzzleManager:
                         self.pieces[mpid].pos += shift
                     self.union(cid, other_cluster)
                     cid = self.find(cid)
-                    return
+                    self.snap_flash_ids = set(self.clusters[cid].members)
+                    self.snap_flash_until = pygame.time.get_ticks() + 220
+                    return True
+        return False
 
     # ----------------- Rendering -----------------
     def _draw_background_layer(self, screen: pygame.Surface):
@@ -496,6 +540,8 @@ class PuzzleManager:
         if active is not None:
             for pid in sorted(self.clusters[active].members):
                 self.pieces[pid].draw(screen, with_shadow=True)
+
+        self._draw_snap_flash(screen)
 
     def draw_dirty(self, screen: pygame.Surface, dirty_rects: List[pygame.Rect]):
         if not dirty_rects:
@@ -547,6 +593,14 @@ class PuzzleManager:
 
         screen.blit(region, merged.topleft)
         pygame.display.update([merged])
+
+    def _draw_snap_flash(self, screen: pygame.Surface):
+        if pygame.time.get_ticks() > self.snap_flash_until:
+            return
+        for pid in self.snap_flash_ids:
+            if pid not in self.pieces:
+                continue
+            pygame.draw.rect(screen, (255, 240, 120), self.pieces[pid].rect.inflate(6, 6), width=2, border_radius=6)
 
     def is_solved(self) -> bool:
         roots = {self.find(pid) for pid in self.pieces.keys()}
@@ -641,9 +695,10 @@ class MainGame:
         self.piece_count_options = [4, 5, 6, 8, 10]
         self.themes = ["aurora", "sunset", "ocean", "mono"]
         self.modes = [
-            ("Casual", {"snap_threshold": 34, "rotation_enabled": 0}),
-            ("Classic", {"snap_threshold": 24, "rotation_enabled": 1}),
-            ("Expert", {"snap_threshold": 14, "rotation_enabled": 1}),
+            ("Casual", {"snap_threshold": 34, "rotation_enabled": 0, "rotation_step": 90, "randomize_rotation": 0}),
+            ("Classic", {"snap_threshold": 24, "rotation_enabled": 1, "rotation_step": 90, "randomize_rotation": 0}),
+            ("Expert", {"snap_threshold": 14, "rotation_enabled": 1, "rotation_step": 90, "randomize_rotation": 1}),
+            ("Hardcore", {"snap_threshold": 10, "rotation_enabled": 1, "rotation_step": 15, "randomize_rotation": 1}),
         ]
         self.current_piece_idx = 2  # default 6x6
         self.current_theme_idx = 0
@@ -653,6 +708,10 @@ class MainGame:
         self.manager: Optional[PuzzleManager] = None
         self.current_slot: Optional[int] = None
         self.solved_cleanup_done = False
+        self.current_image_path: Optional[str] = None
+        self.last_autosave_ts = time.time()
+        self.autosave_interval_sec = 15.0
+        self.snap_sound = self._build_snap_sound()
         self.running = True
         self.state = self.STATE_MENU
 
@@ -671,10 +730,26 @@ class MainGame:
             theme=theme,
             mode_name=mode_name,
             mode_cfg=mode_cfg,
+            image_path=self.current_image_path,
         )
 
     def _apply_resolution(self):
         self.screen = pygame.display.set_mode(self.resolutions[self.current_res_idx])
+
+    def _build_snap_sound(self):
+        if np is None:
+            return None
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=22050, size=-16, channels=1)
+            freq = 660
+            duration = 0.09
+            sr = 22050
+            t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+            wave = (0.35 * np.sin(2 * np.pi * freq * t) * np.exp(-18 * t) * 32767).astype(np.int16)
+            return pygame.sndarray.make_sound(wave)
+        except Exception:
+            return None
 
     def _slot_path(self, slot: int) -> str:
         return f"puzzle_save_slot_{slot}.json"
@@ -690,6 +765,7 @@ class MainGame:
             "theme_idx": self.current_theme_idx,
             "mode_idx": self.current_mode_idx,
             "res_idx": self.current_res_idx,
+            "image_path": self.current_image_path,
             "puzzle": self.manager.get_state(),
         }
         with open(self._slot_path(slot), "w", encoding="utf-8") as f:
@@ -707,12 +783,14 @@ class MainGame:
         self.current_theme_idx = int(payload.get("theme_idx", self.current_theme_idx)) % len(self.themes)
         self.current_mode_idx = int(payload.get("mode_idx", self.current_mode_idx)) % len(self.modes)
         self.current_res_idx = int(payload.get("res_idx", self.current_res_idx)) % len(self.resolutions)
+        self.current_image_path = payload.get("image_path")
         self._apply_resolution()
         self.manager = self._build_manager()
         self.manager.load_state(payload.get("puzzle", {}))
         self.state = self.STATE_PLAY
         self.current_slot = slot
         self.solved_cleanup_done = False
+        self.last_autosave_ts = time.time()
         return True
 
     def _delete_slot(self, slot: int):
@@ -727,6 +805,7 @@ class MainGame:
         self.state = self.STATE_PLAY
         self.current_slot = None
         self.solved_cleanup_done = False
+        self.last_autosave_ts = time.time()
 
     def run(self):
         while self.running:
@@ -756,6 +835,10 @@ class MainGame:
                         self.solved_cleanup_done = True
                     self._draw_win_banner()
 
+                if self.current_slot is not None and (time.time() - self.last_autosave_ts) >= self.autosave_interval_sec:
+                    self._save_to_slot(self.current_slot)
+                    self.last_autosave_ts = time.time()
+
             self.clock.tick(60)
 
         pygame.quit()
@@ -769,6 +852,8 @@ class MainGame:
         res_w, res_h = self.resolutions[self.current_res_idx]
         info = "LMB: ziehen | RMB: rotieren | H: Ghost | R: neues Puzzle | SHIFT+1..4 speichern | 1..4 laden | ESC: Menü"
         status = f"{count}x{count} | Theme: {theme} | Mode: {mode_name} | {res_w}x{res_h}"
+        if self.current_image_path:
+            status += " | Bild: custom"
         if self.current_slot is not None:
             status += f" | Aktiver Slot: {self.current_slot}"
         text = self.font.render(info, True, (240, 240, 240))
@@ -802,8 +887,15 @@ class MainGame:
         self._draw_option_row("Theme", theme, base_y + 75, "theme", base_x)
         self._draw_option_row("Modus", mode_name, base_y + 150, "mode", base_x)
         self._draw_option_row("Auflösung", f"{res_w} x {res_h}", base_y + 225, "res", base_x)
+        image_rect = pygame.Rect(base_x, base_y + 285, 280, 52)
+        image_label = "Bild laden" if not self.current_image_path else "Bild ändern"
+        self._draw_button(image_rect, image_label, primary=False)
+        self.menu_click_targets["image_pick"] = image_rect
+        clear_img_rect = pygame.Rect(base_x + 290, base_y + 285, 120, 52)
+        self._draw_button(clear_img_rect, "Reset", enabled=self.current_image_path is not None)
+        self.menu_click_targets["image_reset"] = clear_img_rect
 
-        start_rect = pygame.Rect(base_x, base_y + 300, 360, 58)
+        start_rect = pygame.Rect(base_x, base_y + 350, 360, 58)
         self._draw_button(start_rect, "Spiel starten", primary=True)
         self.menu_click_targets["start"] = start_rect
 
@@ -812,7 +904,7 @@ class MainGame:
             True,
             (160, 178, 214),
         )
-        self.screen.blit(hint, (base_x, base_y + 380))
+        self.screen.blit(hint, (base_x, base_y + 430))
 
         slot_title = self.font.render("Spielstände", True, (230, 236, 249))
         self.screen.blit(slot_title, (panel.x + panel.w - 420, base_y))
@@ -883,6 +975,8 @@ class MainGame:
             self._start_new_game()
             self.manager.draw_full(self.screen)
             pygame.display.flip()
+        elif event.key == pygame.K_i:
+            self._pick_image_file()
         elif event.key in key_to_slot:
             slot = key_to_slot[event.key]
             if self._load_slot(slot):
@@ -915,6 +1009,10 @@ class MainGame:
             elif key == "res_right":
                 self.current_res_idx = (self.current_res_idx + 1) % len(self.resolutions)
                 self._apply_resolution()
+            elif key == "image_pick":
+                self._pick_image_file()
+            elif key == "image_reset":
+                self.current_image_path = None
             elif key.startswith("slot_"):
                 slot = int(key.split("_")[1])
                 if self._load_slot(slot):
@@ -936,6 +1034,19 @@ class MainGame:
             self.current_res_idx = (self.current_res_idx + direction) % len(self.resolutions)
             self._apply_resolution()
 
+    def _pick_image_file(self):
+        if tk is None or filedialog is None:
+            return
+        root = tk.Tk()
+        root.withdraw()
+        path = filedialog.askopenfilename(
+            title="Puzzle-Bild wählen",
+            filetypes=[("Bilddateien", "*.png;*.jpg;*.jpeg;*.bmp"), ("Alle Dateien", "*.*")],
+        )
+        root.destroy()
+        if path:
+            self.current_image_path = path
+
     def _handle_game_event(self, event: pygame.event.Event, dirty: List[pygame.Rect]):
         if self.manager is None:
             return
@@ -944,9 +1055,14 @@ class MainGame:
         elif event.type == pygame.MOUSEMOTION:
             dirty.extend(self.manager.update_drag(event.pos))
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-            self.manager.end_drag()
+            snapped = self.manager.end_drag()
             self.manager.draw_full(self.screen)
             pygame.display.flip()
+            if snapped and self.snap_sound is not None:
+                try:
+                    self.snap_sound.play()
+                except Exception:
+                    pass
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
             self.manager.rotate_piece(event.pos)
             self.manager.draw_full(self.screen)
