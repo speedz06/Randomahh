@@ -116,7 +116,7 @@ class PuzzleManager:
 
         self.background = self._create_background_texture(self.cols * self.pw, self.rows * self.ph)
         self.ghost_image = self.background.copy()
-        self.ghost_image.set_alpha(52)
+        self.ghost_image.set_alpha(85)
 
         self._build_pieces()
 
@@ -245,22 +245,22 @@ class PuzzleManager:
             base = (np.sin(xv * 12.0) + np.cos(yv * 10.0) + np.sin((xv + yv) * 16.0))
             noise = np.random.normal(0.0, 0.35, (h, w))
             t = np.clip((base + noise + 3.0) / 6.0, 0, 1)
-            # Absichtlich dunklere, kontrastreiche Palette, damit Teilkanten leichter erkennbar sind.
-            arr[..., 0] = (25 + 95 * t).astype(np.uint8)
-            arr[..., 1] = (30 + 80 * (1 - t)).astype(np.uint8)
-            arr[..., 2] = (45 + 105 * np.sin(t * math.pi)).astype(np.uint8)
+            # Gut sichtbare Palette mit mehr Helligkeit + weichem Kontrast.
+            arr[..., 0] = (70 + 150 * t).astype(np.uint8)
+            arr[..., 1] = (80 + 140 * (1 - t)).astype(np.uint8)
+            arr[..., 2] = (95 + 130 * np.sin(t * math.pi)).astype(np.uint8)
             pygame.surfarray.blit_array(surf, np.transpose(arr, (1, 0, 2)))
         else:
-            surf.fill((26, 30, 42))
+            surf.fill((64, 70, 90))
             for _ in range(2800):
                 cx = random.randint(0, w)
                 cy = random.randint(0, h)
                 rad = random.randint(4, 28)
                 col = (
-                    random.randint(35, 140),
-                    random.randint(35, 130),
-                    random.randint(45, 150),
-                    random.randint(18, 55),
+                    random.randint(80, 210),
+                    random.randint(70, 210),
+                    random.randint(90, 220),
+                    random.randint(22, 62),
                 )
                 pygame.draw.circle(surf, col, (cx, cy), rad)
         return surf
@@ -284,6 +284,7 @@ class PuzzleManager:
                 piece_img = pygame.Surface(src_rect.size, pygame.SRCALPHA)
                 piece_img.blit(piece_content, (0, 0))
                 piece_img.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                self._enhance_piece_visibility(piece_img, mask)
 
                 piece = PuzzlePiece(
                     pid=pid,
@@ -303,6 +304,17 @@ class PuzzleManager:
                 self.clusters[pid] = PieceCluster(pid)
                 self.cluster_z_order.append(pid)
                 pid += 1
+
+    def _enhance_piece_visibility(self, piece_img: pygame.Surface, mask: pygame.Surface):
+        # Dezent hellere Kantenbeleuchtung + dunkler Außenrand,
+        # damit die Verzahnungen auch auf ähnlichen Farbbereichen lesbar bleiben.
+        m = pygame.mask.from_surface(mask)
+        outline = m.outline()
+        if len(outline) < 3:
+            return
+
+        pygame.draw.lines(piece_img, (15, 18, 24, 210), True, outline, 3)
+        pygame.draw.lines(piece_img, (230, 236, 246, 165), True, outline, 1)
 
     # ----------------- Union-Find -----------------
     def find(self, pid: int) -> int:
@@ -437,14 +449,14 @@ class PuzzleManager:
 
     # ----------------- Rendering -----------------
     def _draw_background_layer(self, screen: pygame.Surface):
-        screen.fill((16, 17, 21))
+        screen.fill((34, 36, 44))
         board_rect = pygame.Rect(
             int(self.board_origin.x),
             int(self.board_origin.y),
             self.cols * self.pw,
             self.rows * self.ph,
         )
-        pygame.draw.rect(screen, (23, 26, 34), board_rect.inflate(12, 12), border_radius=8)
+        pygame.draw.rect(screen, (54, 58, 72), board_rect.inflate(12, 12), border_radius=8)
         if self.ghost_enabled:
             screen.blit(self.ghost_image, board_rect.topleft)
 
@@ -474,7 +486,7 @@ class PuzzleManager:
 
         # Dirty-Rect: nur den betroffenen Bereich des Hintergrunds zurücksetzen.
         region = pygame.Surface((merged.width, merged.height), pygame.SRCALPHA)
-        region.fill((16, 17, 21))
+        region.fill((34, 36, 44))
 
         board_rect = pygame.Rect(
             int(self.board_origin.x),
@@ -485,7 +497,7 @@ class PuzzleManager:
         if merged.colliderect(board_rect.inflate(12, 12)):
             pygame.draw.rect(
                 region,
-                (23, 26, 34),
+                (54, 58, 72),
                 board_rect.inflate(12, 12).move(-merged.x, -merged.y),
                 border_radius=8,
             )
