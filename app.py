@@ -624,7 +624,9 @@ class MainGame:
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("High-End Jigsaw Puzzle")
-        self.screen = pygame.display.set_mode((1400, 900))
+        self.resolutions = [(1280, 720), (1366, 768), (1600, 900), (1920, 1080)]
+        self.current_res_idx = 2
+        self.screen = pygame.display.set_mode(self.resolutions[self.current_res_idx])
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("segoeui", 22)
         self.font_small = pygame.font.SysFont("segoeui", 18)
@@ -651,17 +653,21 @@ class MainGame:
         count = self.piece_count_options[self.current_piece_idx]
         mode_name, mode_cfg = self.modes[self.current_mode_idx]
         theme = self.themes[self.current_theme_idx]
+        screen_w, screen_h = self.resolutions[self.current_res_idx]
 
-        board_pixels = 780
+        board_pixels = min(820, int(min(screen_w, screen_h) * 0.72))
         piece_px = max(44, board_pixels // count)
         return PuzzleManager(
             board_size=(count, count),
             piece_size=(piece_px, piece_px),
-            screen_size=(1400, 900),
+            screen_size=(screen_w, screen_h),
             theme=theme,
             mode_name=mode_name,
             mode_cfg=mode_cfg,
         )
+
+    def _apply_resolution(self):
+        self.screen = pygame.display.set_mode(self.resolutions[self.current_res_idx])
 
     def _slot_path(self, slot: int) -> str:
         return f"puzzle_save_slot_{slot}.json"
@@ -676,6 +682,7 @@ class MainGame:
             "piece_idx": self.current_piece_idx,
             "theme_idx": self.current_theme_idx,
             "mode_idx": self.current_mode_idx,
+            "res_idx": self.current_res_idx,
             "puzzle": self.manager.get_state(),
         }
         with open(self._slot_path(slot), "w", encoding="utf-8") as f:
@@ -692,6 +699,8 @@ class MainGame:
         self.current_piece_idx = int(payload.get("piece_idx", self.current_piece_idx)) % len(self.piece_count_options)
         self.current_theme_idx = int(payload.get("theme_idx", self.current_theme_idx)) % len(self.themes)
         self.current_mode_idx = int(payload.get("mode_idx", self.current_mode_idx)) % len(self.modes)
+        self.current_res_idx = int(payload.get("res_idx", self.current_res_idx)) % len(self.resolutions)
+        self._apply_resolution()
         self.manager = self._build_manager()
         self.manager.load_state(payload.get("puzzle", {}))
         self.state = self.STATE_PLAY
@@ -750,8 +759,9 @@ class MainGame:
         count = self.piece_count_options[self.current_piece_idx]
         theme = self.themes[self.current_theme_idx]
         mode_name, _ = self.modes[self.current_mode_idx]
+        res_w, res_h = self.resolutions[self.current_res_idx]
         info = "LMB: ziehen | RMB: rotieren | H: Ghost | R: neues Puzzle | SHIFT+1..4 speichern | 1..4 laden | ESC: Menü"
-        status = f"{count}x{count} | Theme: {theme} | Mode: {mode_name}"
+        status = f"{count}x{count} | Theme: {theme} | Mode: {mode_name} | {res_w}x{res_h}"
         if self.current_slot is not None:
             status += f" | Aktiver Slot: {self.current_slot}"
         text = self.font.render(info, True, (240, 240, 240))
@@ -765,23 +775,28 @@ class MainGame:
     def _draw_menu(self):
         self.menu_click_targets.clear()
         self.screen.fill((16, 18, 26))
-        panel = pygame.Rect(120, 70, 1160, 740)
+        sw, sh = self.screen.get_size()
+        panel = pygame.Rect(int(sw * 0.08), int(sh * 0.08), int(sw * 0.84), int(sh * 0.82))
         pygame.draw.rect(self.screen, (29, 33, 46), panel, border_radius=24)
         pygame.draw.rect(self.screen, (60, 72, 102), panel, width=2, border_radius=24)
 
         title = self.font_title.render("Jigsaw Studio", True, (242, 245, 255))
         subtitle = self.font.render("Moderne Startoberfläche mit klickbaren Optionen", True, (172, 184, 215))
-        self.screen.blit(title, (170, 110))
-        self.screen.blit(subtitle, (174, 166))
+        self.screen.blit(title, (panel.x + 50, panel.y + 40))
+        self.screen.blit(subtitle, (panel.x + 54, panel.y + 96))
 
+        res_w, res_h = self.resolutions[self.current_res_idx]
         count = self.piece_count_options[self.current_piece_idx]
         theme = self.themes[self.current_theme_idx]
         mode_name, _ = self.modes[self.current_mode_idx]
-        self._draw_option_row("Größe", f"{count} x {count}", 250, "size")
-        self._draw_option_row("Theme", theme, 325, "theme")
-        self._draw_option_row("Modus", mode_name, 400, "mode")
+        base_y = panel.y + 180
+        base_x = panel.x + 50
+        self._draw_option_row("Größe", f"{count} x {count}", base_y, "size", base_x)
+        self._draw_option_row("Theme", theme, base_y + 75, "theme", base_x)
+        self._draw_option_row("Modus", mode_name, base_y + 150, "mode", base_x)
+        self._draw_option_row("Auflösung", f"{res_w} x {res_h}", base_y + 225, "res", base_x)
 
-        start_rect = pygame.Rect(170, 495, 360, 58)
+        start_rect = pygame.Rect(base_x, base_y + 300, 360, 58)
         self._draw_button(start_rect, "Spiel starten", primary=True)
         self.menu_click_targets["start"] = start_rect
 
@@ -790,22 +805,22 @@ class MainGame:
             True,
             (160, 178, 214),
         )
-        self.screen.blit(hint, (170, 575))
+        self.screen.blit(hint, (base_x, base_y + 380))
 
         slot_title = self.font.render("Spielstände", True, (230, 236, 249))
-        self.screen.blit(slot_title, (760, 250))
+        self.screen.blit(slot_title, (panel.x + panel.w - 420, base_y))
         for s in range(1, 5):
             exists = self._slot_exists(s)
-            y = 300 + (s - 1) * 92
+            y = base_y + 50 + (s - 1) * 92
             label = f"Slot {s} • {'Fortsetzen' if exists else 'Leer'}"
-            rect = pygame.Rect(760, y, 280, 70)
+            rect = pygame.Rect(panel.x + panel.w - 420, y, 280, 70)
             self._draw_button(rect, label, enabled=exists)
             self.menu_click_targets[f"slot_{s}"] = rect
-            del_rect = pygame.Rect(1050, y, 90, 70)
+            del_rect = pygame.Rect(panel.x + panel.w - 130, y, 90, 70)
             self._draw_button(del_rect, "Löschen", enabled=exists)
             self.menu_click_targets[f"delete_{s}"] = del_rect
             small = self.font_small.render(f"Klick zum Laden ({s})", True, (150, 166, 198))
-            self.screen.blit(small, (780, 342 + (s - 1) * 92))
+            self.screen.blit(small, (panel.x + panel.w - 400, y + 42))
 
     def _draw_button(self, rect: pygame.Rect, text: str, primary: bool = False, enabled: bool = True):
         mouse = pygame.mouse.get_pos()
@@ -824,13 +839,13 @@ class MainGame:
         txt = self.font.render(text, True, fg)
         self.screen.blit(txt, txt.get_rect(center=rect.center))
 
-    def _draw_option_row(self, name: str, value: str, y: int, key: str):
+    def _draw_option_row(self, name: str, value: str, y: int, key: str, x_base: int):
         label = self.font.render(name, True, (205, 220, 245))
-        self.screen.blit(label, (170, y + 13))
+        self.screen.blit(label, (x_base, y + 13))
 
-        left_rect = pygame.Rect(330, y, 48, 48)
-        right_rect = pygame.Rect(690, y, 48, 48)
-        value_rect = pygame.Rect(390, y, 290, 48)
+        left_rect = pygame.Rect(x_base + 160, y, 48, 48)
+        right_rect = pygame.Rect(x_base + 520, y, 48, 48)
+        value_rect = pygame.Rect(x_base + 220, y, 290, 48)
 
         self._draw_button(left_rect, "‹")
         self._draw_button(right_rect, "›")
@@ -850,9 +865,9 @@ class MainGame:
             return
         key_to_slot = {pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4}
         if event.key == pygame.K_UP:
-            self.menu_cursor = (self.menu_cursor - 1) % 4
+            self.menu_cursor = (self.menu_cursor - 1) % 5
         elif event.key == pygame.K_DOWN:
-            self.menu_cursor = (self.menu_cursor + 1) % 4
+            self.menu_cursor = (self.menu_cursor + 1) % 5
         elif event.key == pygame.K_LEFT:
             self._menu_adjust(-1)
         elif event.key == pygame.K_RIGHT:
@@ -887,6 +902,12 @@ class MainGame:
                 self.current_mode_idx = (self.current_mode_idx - 1) % len(self.modes)
             elif key == "mode_right":
                 self.current_mode_idx = (self.current_mode_idx + 1) % len(self.modes)
+            elif key == "res_left":
+                self.current_res_idx = (self.current_res_idx - 1) % len(self.resolutions)
+                self._apply_resolution()
+            elif key == "res_right":
+                self.current_res_idx = (self.current_res_idx + 1) % len(self.resolutions)
+                self._apply_resolution()
             elif key.startswith("slot_"):
                 slot = int(key.split("_")[1])
                 if self._load_slot(slot):
@@ -904,6 +925,9 @@ class MainGame:
             self.current_theme_idx = (self.current_theme_idx + direction) % len(self.themes)
         elif self.menu_cursor == 2:
             self.current_mode_idx = (self.current_mode_idx + direction) % len(self.modes)
+        elif self.menu_cursor == 3:
+            self.current_res_idx = (self.current_res_idx + direction) % len(self.resolutions)
+            self._apply_resolution()
 
     def _handle_game_event(self, event: pygame.event.Event, dirty: List[pygame.Rect]):
         if self.manager is None:
