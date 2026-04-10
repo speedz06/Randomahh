@@ -555,8 +555,8 @@ class PuzzleManager:
         return all(piece.rotation == 0 for piece in self.pieces.values())
 
     # ----------------- Save / Load -----------------
-    def save_to_file(self, path: str):
-        data = {
+    def get_state(self) -> Dict:
+        return {
             "rows": self.rows,
             "cols": self.cols,
             "pieces": [
@@ -570,16 +570,13 @@ class PuzzleManager:
                 for p in self.pieces.values()
             ],
         }
+
+    def save_to_file(self, path: str):
+        data = self.get_state()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-    def load_from_file(self, path: str):
-        if not os.path.exists(path):
-            return
-
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
+    def load_state(self, data: Dict):
         for pid in self.pieces:
             self.parent[pid] = pid
             self.clusters[pid] = PieceCluster(pid)
@@ -612,8 +609,18 @@ class PuzzleManager:
                 unique_roots.append(root)
         self.cluster_z_order = unique_roots
 
+    def load_from_file(self, path: str):
+        if not os.path.exists(path):
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.load_state(data)
+
 
 class MainGame:
+    STATE_MENU = "menu"
+    STATE_PLAY = "play"
+
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("High-End Jigsaw Puzzle")
@@ -630,9 +637,10 @@ class MainGame:
         self.current_piece_idx = 2  # default 6x6
         self.current_theme_idx = 0
         self.current_mode_idx = 1
-        self.manager = self._build_manager()
+        self.menu_cursor = 0
+        self.manager: Optional[PuzzleManager] = None
         self.running = True
-        self.save_path = "puzzle_save.json"
+        self.state = self.STATE_MENU
 
     def _build_manager(self) -> PuzzleManager:
         count = self.piece_count_options[self.current_piece_idx]
@@ -650,83 +658,81 @@ class MainGame:
             mode_cfg=mode_cfg,
         )
 
-    def run(self):
-        self.manager.draw_full(self.screen)
-        pygame.display.flip()
+    def _slot_path(self, slot: int) -> str:
+        return f"puzzle_save_slot_{slot}.json"
 
+    def _slot_exists(self, slot: int) -> bool:
+        return os.path.exists(self._slot_path(slot))
+
+    def _save_to_slot(self, slot: int):
+        if self.manager is None:
+            return
+        payload = {
+            "piece_idx": self.current_piece_idx,
+            "theme_idx": self.current_theme_idx,
+            "mode_idx": self.current_mode_idx,
+            "puzzle": self.manager.get_state(),
+        }
+        with open(self._slot_path(slot), "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
+    def _load_slot(self, slot: int) -> bool:
+        path = self._slot_path(slot)
+        if not os.path.exists(path):
+            return False
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        self.current_piece_idx = int(payload.get("piece_idx", self.current_piece_idx)) % len(self.piece_count_options)
+        self.current_theme_idx = int(payload.get("theme_idx", self.current_theme_idx)) % len(self.themes)
+        self.current_mode_idx = int(payload.get("mode_idx", self.current_mode_idx)) % len(self.modes)
+        self.manager = self._build_manager()
+        self.manager.load_state(payload.get("puzzle", {}))
+        self.state = self.STATE_PLAY
+        return True
+
+    def _start_new_game(self):
+        self.manager = self._build_manager()
+        self.state = self.STATE_PLAY
+
+    def run(self):
         while self.running:
             dirty: List[pygame.Rect] = []
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
+                if self.state == self.STATE_MENU:
+                    self._handle_menu_event(event)
+                else:
+                    self._handle_game_event(event, dirty)
 
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self.manager.start_drag(event.pos)
+            if self.state == self.STATE_MENU:
+                self._draw_menu()
+                pygame.display.flip()
+            else:
+                if self.manager is None:
+                    self._start_new_game()
+                if dirty:
+                    self.manager.draw_dirty(self.screen, dirty)
+                self._draw_overlay()
+                pygame.display.update([pygame.Rect(0, 0, 1040, 58)])
 
-                elif event.type == pygame.MOUSEMOTION:
-                    dirty.extend(self.manager.update_drag(event.pos))
-
-                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                    self.manager.end_drag()
-                    self.manager.draw_full(self.screen)
-                    pygame.display.flip()
-
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                    self.manager.rotate_piece(event.pos)
-                    self.manager.draw_full(self.screen)
-                    pygame.display.flip()
-
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_h:
-                        self.manager.ghost_enabled = not self.manager.ghost_enabled
-                        self.manager.draw_full(self.screen)
-                        pygame.display.flip()
-                    elif event.key == pygame.K_s:
-                        self.manager.save_to_file(self.save_path)
-                    elif event.key == pygame.K_l:
-                        self.manager.load_from_file(self.save_path)
-                        self.manager.draw_full(self.screen)
-                        pygame.display.flip()
-                    elif event.key == pygame.K_r:
-                        self.manager = self._build_manager()
-                        self.manager.draw_full(self.screen)
-                        pygame.display.flip()
-                    elif event.key == pygame.K_c:
-                        self.current_piece_idx = (self.current_piece_idx + 1) % len(self.piece_count_options)
-                        self.manager = self._build_manager()
-                        self.manager.draw_full(self.screen)
-                        pygame.display.flip()
-                    elif event.key == pygame.K_t:
-                        self.current_theme_idx = (self.current_theme_idx + 1) % len(self.themes)
-                        self.manager = self._build_manager()
-                        self.manager.draw_full(self.screen)
-                        pygame.display.flip()
-                    elif event.key == pygame.K_m:
-                        self.current_mode_idx = (self.current_mode_idx + 1) % len(self.modes)
-                        self.manager = self._build_manager()
-                        self.manager.draw_full(self.screen)
-                        pygame.display.flip()
-
-            if dirty:
-                self.manager.draw_dirty(self.screen, dirty)
-
-            self._draw_overlay()
-            pygame.display.update([pygame.Rect(0, 0, 980, 58)])
-
-            if self.manager.is_solved():
-                self._draw_win_banner()
+                if self.manager.is_solved():
+                    self._draw_win_banner()
 
             self.clock.tick(60)
 
         pygame.quit()
 
     def _draw_overlay(self):
+        if self.manager is None:
+            return
         count = self.piece_count_options[self.current_piece_idx]
         theme = self.themes[self.current_theme_idx]
         mode_name, _ = self.modes[self.current_mode_idx]
         info = (
-            "LMB: ziehen | RMB: rotieren | H: Ghost | S/L: Save/Load | "
-            "R: neu | C: Größe | T: Theme | M: Mode"
+            "LMB: ziehen | RMB: rotieren | H: Ghost | R: neues Puzzle | "
+            "SHIFT+1..4 speichern | 1..4 laden | ESC: Menü"
         )
         status = f"{count}x{count} | Theme: {theme} | Mode: {mode_name}"
         text = self.font.render(info, True, (240, 240, 240))
@@ -736,6 +742,104 @@ class MainGame:
         self.screen.blit(bg, (0, 0))
         self.screen.blit(text, (8, 6))
         self.screen.blit(text2, (8, 30))
+
+    def _draw_menu(self):
+        self.screen.fill((18, 20, 28))
+        title = self.font.render("Puzzle Startmenü", True, (245, 245, 245))
+        self.screen.blit(title, (50, 40))
+
+        count = self.piece_count_options[self.current_piece_idx]
+        theme = self.themes[self.current_theme_idx]
+        mode_name, _ = self.modes[self.current_mode_idx]
+        entries = [
+            f"Größe: {count}x{count}",
+            f"Theme: {theme}",
+            f"Modus: {mode_name}",
+            "ENTER: Neues Spiel starten",
+        ]
+
+        for i, line in enumerate(entries):
+            col = (255, 220, 140) if i == self.menu_cursor else (220, 228, 245)
+            txt = self.font.render(line, True, col)
+            self.screen.blit(txt, (50, 110 + i * 42))
+
+        hint = self.font.render("Links/Rechts ändern | Hoch/Runter wählen", True, (165, 180, 210))
+        self.screen.blit(hint, (50, 300))
+
+        slot_y = 370
+        slot_title = self.font.render("Spielstände (1-4 zum Laden):", True, (210, 220, 240))
+        self.screen.blit(slot_title, (50, slot_y))
+        for s in range(1, 5):
+            status = "belegt" if self._slot_exists(s) else "leer"
+            txt = self.font.render(f"Slot {s}: {status}", True, (190, 200, 220))
+            self.screen.blit(txt, (70, slot_y + 36 + s * 28))
+
+    def _handle_menu_event(self, event: pygame.event.Event):
+        if event.type != pygame.KEYDOWN:
+            return
+        key_to_slot = {pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4}
+        if event.key == pygame.K_UP:
+            self.menu_cursor = (self.menu_cursor - 1) % 4
+        elif event.key == pygame.K_DOWN:
+            self.menu_cursor = (self.menu_cursor + 1) % 4
+        elif event.key == pygame.K_LEFT:
+            self._menu_adjust(-1)
+        elif event.key == pygame.K_RIGHT:
+            self._menu_adjust(1)
+        elif event.key == pygame.K_RETURN:
+            self._start_new_game()
+            self.manager.draw_full(self.screen)
+            pygame.display.flip()
+        elif event.key in key_to_slot:
+            slot = key_to_slot[event.key]
+            if self._load_slot(slot):
+                self.manager.draw_full(self.screen)
+                pygame.display.flip()
+
+    def _menu_adjust(self, direction: int):
+        if self.menu_cursor == 0:
+            self.current_piece_idx = (self.current_piece_idx + direction) % len(self.piece_count_options)
+        elif self.menu_cursor == 1:
+            self.current_theme_idx = (self.current_theme_idx + direction) % len(self.themes)
+        elif self.menu_cursor == 2:
+            self.current_mode_idx = (self.current_mode_idx + direction) % len(self.modes)
+
+    def _handle_game_event(self, event: pygame.event.Event, dirty: List[pygame.Rect]):
+        if self.manager is None:
+            return
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.manager.start_drag(event.pos)
+        elif event.type == pygame.MOUSEMOTION:
+            dirty.extend(self.manager.update_drag(event.pos))
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.manager.end_drag()
+            self.manager.draw_full(self.screen)
+            pygame.display.flip()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+            self.manager.rotate_piece(event.pos)
+            self.manager.draw_full(self.screen)
+            pygame.display.flip()
+        elif event.type == pygame.KEYDOWN:
+            key_to_slot = {pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4}
+            mods = pygame.key.get_mods()
+            if event.key == pygame.K_h:
+                self.manager.ghost_enabled = not self.manager.ghost_enabled
+                self.manager.draw_full(self.screen)
+                pygame.display.flip()
+            elif event.key == pygame.K_r:
+                self._start_new_game()
+                self.manager.draw_full(self.screen)
+                pygame.display.flip()
+            elif event.key == pygame.K_ESCAPE:
+                self.state = self.STATE_MENU
+            elif event.key in key_to_slot:
+                slot = key_to_slot[event.key]
+                if mods & pygame.KMOD_SHIFT:
+                    self._save_to_slot(slot)
+                else:
+                    if self._load_slot(slot):
+                        self.manager.draw_full(self.screen)
+                        pygame.display.flip()
 
     def _draw_win_banner(self):
         text = self.font.render("Puzzle abgeschlossen!", True, (255, 235, 120))
