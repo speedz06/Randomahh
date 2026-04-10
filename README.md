@@ -36,6 +36,7 @@ python3 app.py
 - **LMB**: Teil/Gruppe ziehen
 - **RMB**: Teil rotieren (90°)
 - **H**: Ghost-Image ein/aus
+- **F1**: Hotkey-Hilfeleiste ein/aus
 - **R**: Neues Puzzle
 - **Shift+1..4**: In Slot 1-4 speichern
 - **1..4**: Slot 1-4 laden

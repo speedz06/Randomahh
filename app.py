@@ -360,21 +360,27 @@ class PuzzleManager:
                 if self.mode_cfg.get("randomize_rotation", 0):
                     step = int(self.mode_cfg.get("rotation_step", 90))
                     piece.apply_rotation(random.choice([0, step, (2 * step) % 360, (3 * step) % 360]))
+                self._clamp_piece_on_screen(piece)
                 self.parent[pid] = pid
                 self.clusters[pid] = PieceCluster(pid)
                 self.cluster_z_order.append(pid)
                 pid += 1
 
     def _enhance_piece_visibility(self, piece_img: pygame.Surface, mask: pygame.Surface):
-        # Dezent hellere Kantenbeleuchtung + dunkler Außenrand,
-        # damit die Verzahnungen auch auf ähnlichen Farbbereichen lesbar bleiben.
+        # Sehr dezente Kontur, damit das Motiv nicht "comic-artig" überzeichnet wirkt.
         m = pygame.mask.from_surface(mask)
         outline = m.outline()
         if len(outline) < 3:
             return
 
-        pygame.draw.lines(piece_img, (15, 18, 24, 210), True, outline, 3)
-        pygame.draw.lines(piece_img, (230, 236, 246, 165), True, outline, 1)
+        pygame.draw.lines(piece_img, (20, 24, 30, 70), True, outline, 1)
+
+    def _clamp_piece_on_screen(self, piece: PuzzlePiece):
+        rect = piece.rect
+        max_x = self.screen_w - rect.width
+        max_y = self.screen_h - rect.height
+        piece.pos.x = max(0, min(piece.pos.x, max_x))
+        piece.pos.y = max(0, min(piece.pos.y, max_y))
 
     # ----------------- Union-Find -----------------
     def find(self, pid: int) -> int:
@@ -456,6 +462,8 @@ class PuzzleManager:
             return False
         cid = self.drag_cluster_id
         snapped = self._snap_cluster(cid)
+        for pid in self.clusters[cid].members:
+            self._clamp_piece_on_screen(self.pieces[pid])
         self.drag_cluster_id = None
         return snapped
 
@@ -644,6 +652,7 @@ class PuzzleManager:
             p = self.pieces[pid]
             p.pos = Vec2(item["x"], item["y"])
             p.apply_rotation(int(item.get("rotation", 0)) % 360)
+            self._clamp_piece_on_screen(p)
             root = int(item.get("cluster", pid))
             cluster_members.setdefault(root, []).append(pid)
 
@@ -712,6 +721,7 @@ class MainGame:
         self.last_autosave_ts = time.time()
         self.autosave_interval_sec = 15.0
         self.snap_sound = self._build_snap_sound()
+        self.show_overlay = False
         self.running = True
         self.state = self.STATE_MENU
 
@@ -826,8 +836,9 @@ class MainGame:
                     self._start_new_game()
                 if dirty:
                     self.manager.draw_dirty(self.screen, dirty)
-                self._draw_overlay()
-                pygame.display.update([pygame.Rect(0, 0, 1040, 58)])
+                if self.show_overlay:
+                    self._draw_overlay()
+                    pygame.display.update([pygame.Rect(0, 0, 1040, 58)])
 
                 if self.manager.is_solved():
                     if not self.solved_cleanup_done and self.current_slot is not None:
@@ -1073,6 +1084,12 @@ class MainGame:
             if event.key == pygame.K_h:
                 self.manager.ghost_enabled = not self.manager.ghost_enabled
                 self.manager.draw_full(self.screen)
+                pygame.display.flip()
+            elif event.key == pygame.K_F1:
+                self.show_overlay = not self.show_overlay
+                self.manager.draw_full(self.screen)
+                if self.show_overlay:
+                    self._draw_overlay()
                 pygame.display.flip()
             elif event.key == pygame.K_r:
                 self._start_new_game()
