@@ -1,84 +1,51 @@
-# Klotimer
+# High-End Jigsaw Puzzle (Pygame)
 
-Klotimer is a lightweight, self-hosted web app for tracking all-time toilet time with user profiles.
+Professionelles Jigsaw-Puzzle mit echter Kanten-Geometrie (Nasen/Buchten), Union-Find-Clustering, Ghost-Image-Hilfe, Rotation sowie Save/Load im JSON-Format.
 
-## What’s included
+## Features
 
-- Account registration, login, logout.
-- Personal dashboard with:
-  - all-time total,
-  - session count,
-  - average and best session,
-  - today and 7-day totals,
-  - current/best streaks,
-  - 7-day day-by-day activity view,
-  - daily goal progress.
-- Start/stop session timer.
-- Mood tagging (`quick`, `normal`, `deep`).
-- Badge milestones.
-- Personal session history.
-- Community leaderboard.
-- CSV export.
-- **PWA support** (install as app):
-  - web manifest,
-  - service worker,
-  - install button (`beforeinstallprompt`),
-  - custom app icon.
+- Mathematische Puzzleformen pro Teilkante (`top/right/bottom/left`: `+1`, `0`, `-1`).
+- Nahtloses Nachbar-Fitting durch invertierte Kantenparameter.
+- Exakte Alpha-Maskierung über `pygame.SRCALPHA`.
+- Union-Find für permanente Cluster-Verschmelzung.
+- Gruppenziehen inklusive Z-Order-Fokus + Schatten.
+- Rotation per Rechtsklick (Snapping nur bei `0°`).
+- Dirty-Rect-Rendering während Drag für stabile FPS.
+- Ghost-Image-Hilfe per `H`.
+- Modernes, klickbares Startmenü (UI statt nur Tastatur):
+- Startmenü vor Spielbeginn für Größe/Theme/Modus:
+  - Größen: `4x4`, `5x5`, `6x6`, `8x8`, `10x10`
+  - Themes: `aurora`, `sunset`, `ocean`, `mono`
+  - Modi: `Casual`, `Classic`, `Expert`, `Hardcore` (15°-Rotation, strengere Snap-Toleranz)
+  - Auflösungen: `1280x720`, `1366x768`, `1600x900`, `1920x1080`, `1920x1200` (+ native Desktop-Auflösung, falls abweichend)
+- Eigenes Bild ladbar (Startmenü, Button **Bild laden**).
+- Prozedurale Textur (mit NumPy, fallback ohne NumPy).
+- 4 Spielstände (Slots) zum Speichern/Laden.
+- Wenn ein fortgesetztes Puzzle abgeschlossen wird, wird dessen aktiver Slot automatisch gelöscht.
+- Auto-Save alle ~15 Sekunden in den aktiven Slot (überschreibt denselben Spielstand, legt keinen neuen an).
+- Kleine Snap-Polish-Effekte: Highlight beim Einrasten + kurzer Sound (falls Audio verfügbar).
 
-## Run locally
+## Start
 
 ```bash
 python3 app.py
 ```
 
-Open: <http://localhost:8000>
+## Steuerung
 
-Healthcheck endpoint: <http://localhost:8000/health>
+- **LMB**: Teil/Gruppe ziehen
+- **RMB**: Teil rotieren (90°)
+- **H**: Ghost-Image ein/aus
+- **R**: Neues Puzzle
+- **Shift+1..4**: In Slot 1-4 speichern
+- **1..4**: Slot 1-4 laden
+- **Esc**: Zurück ins Startmenü
 
-## Einfach hosten (für Freunde)
+### Startmenü
 
-Am schnellsten geht es mit einem kleinen PaaS-Anbieter:
-
-### Option A: Render / Railway (einfachster Start)
-
-1. Repo zu GitHub pushen.
-2. Bei Render oder Railway ein neues **Web Service** Projekt aus dem Repo erstellen.
-3. Start command setzen:
-
-   ```bash
-   python3 app.py
-   ```
-
-4. Environment variable setzen:
-   - `PORT` wird i.d.R. automatisch gesetzt.
-5. Deploy starten und den öffentlichen Link mit Freunden teilen.
-
-Hinweis: Die SQLite-Datei (`klotimer.db`) ist auf vielen Free-Tiers nicht dauerhaft persistent. Für ernsthafte Nutzung:
-- persistentes Volume aktivieren **oder**
-- auf Postgres migrieren.
-
-### Option B: Selbst hosten auf einem VPS (mehr Kontrolle)
-
-1. Ubuntu-Server (z. B. Hetzner, Netcup, DigitalOcean) erstellen.
-2. Python installieren, Repo klonen, App mit `screen`/`tmux` testen.
-3. Mit `systemd` als Dienst laufen lassen.
-4. Nginx als Reverse-Proxy vor die App setzen.
-5. TLS per Let's Encrypt (`certbot`) aktivieren.
-
-Damit bekommen deine Freunde eine sichere URL wie `https://deinedomain.de`.
-
-### Option C: Im Heimnetz selbst hosten
-
-Für "selber Host sein":
-- App auf einem Raspberry Pi oder Mini-PC starten.
-- Router-Portweiterleitung + DynDNS einrichten.
-- Unbedingt TLS (z. B. über Cloudflare Tunnel oder Caddy) nutzen.
-
-Das ist günstig, aber mehr Wartung (Strom, Internet-Ausfälle, Sicherheit).
-
-## Notes
-
-- Uses SQLite (`klotimer.db`) for persistence.
-- Passwords are hashed with PBKDF2-HMAC-SHA256 + random salts.
-- Auth uses HTTP-only session cookies.
-- Includes security headers: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`.
+- **Maus**: Klickbare Buttons für Größe, Theme, Modus, Auflösung, Start und Slot-Laden
+- **Maus**: Pro Slot zusätzlich ein **Löschen**-Button, um Spielstände manuell zu entfernen
+- **Hoch/Runter**: Menüpunkt wählen
+- **Links/Rechts**: Wert ändern (Größe/Theme/Modus)
+- **Enter**: Neues Spiel mit den gewählten Einstellungen starten
+- **1..4**: Direkt Spielstand aus Slot laden
