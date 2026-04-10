@@ -1,84 +1,40 @@
-# Klotimer
+# High-End Jigsaw Puzzle (Pygame)
 
-Klotimer is a lightweight, self-hosted web app for tracking all-time toilet time with user profiles.
+Professionelles Jigsaw-Puzzle mit echter Kanten-Geometrie (Nasen/Buchten), Union-Find-Clustering, Ghost-Image-Hilfe, Rotation sowie Save/Load im JSON-Format.
 
-## What’s included
+## Features
 
-- Account registration, login, logout.
-- Personal dashboard with:
-  - all-time total,
-  - session count,
-  - average and best session,
-  - today and 7-day totals,
-  - current/best streaks,
-  - 7-day day-by-day activity view,
-  - daily goal progress.
-- Start/stop session timer.
-- Mood tagging (`quick`, `normal`, `deep`).
-- Badge milestones.
-- Personal session history.
-- Community leaderboard.
-- CSV export.
-- **PWA support** (install as app):
-  - web manifest,
-  - service worker,
-  - install button (`beforeinstallprompt`),
-  - custom app icon.
+- Mathematische Puzzleformen pro Teilkante (`top/right/bottom/left`: `+1`, `0`, `-1`).
+- Nahtloses Nachbar-Fitting durch invertierte Kantenparameter.
+- Exakte Alpha-Maskierung über `pygame.SRCALPHA`.
+- Union-Find für permanente Cluster-Verschmelzung.
+- Gruppenziehen inklusive Z-Order-Fokus + Schatten.
+- Rotation per Rechtsklick (Snapping nur bei `0°`).
+- Dirty-Rect-Rendering während Drag für stabile FPS.
+- Ghost-Image-Hilfe per `H`.
+- Umschaltbare Puzzle-Größen per `C`: `4x4`, `5x5`, `6x6`, `8x8`, `10x10`.
+- Umschaltbare Themes per `T`: `aurora`, `sunset`, `ocean`, `mono`.
+- Umschaltbare Modi per `M`:
+  - `Casual` (größere Snap-Toleranz, Rotation aus),
+  - `Classic`,
+  - `Expert` (kleinere Snap-Toleranz).
+- Prozedurale Textur (mit NumPy, fallback ohne NumPy).
+- Save/Load über `puzzle_save.json` (`S` / `L`).
 
-## Run locally
+## Start
 
 ```bash
 python3 app.py
 ```
 
-Open: <http://localhost:8000>
+## Steuerung
 
-Healthcheck endpoint: <http://localhost:8000/health>
-
-## Einfach hosten (für Freunde)
-
-Am schnellsten geht es mit einem kleinen PaaS-Anbieter:
-
-### Option A: Render / Railway (einfachster Start)
-
-1. Repo zu GitHub pushen.
-2. Bei Render oder Railway ein neues **Web Service** Projekt aus dem Repo erstellen.
-3. Start command setzen:
-
-   ```bash
-   python3 app.py
-   ```
-
-4. Environment variable setzen:
-   - `PORT` wird i.d.R. automatisch gesetzt.
-5. Deploy starten und den öffentlichen Link mit Freunden teilen.
-
-Hinweis: Die SQLite-Datei (`klotimer.db`) ist auf vielen Free-Tiers nicht dauerhaft persistent. Für ernsthafte Nutzung:
-- persistentes Volume aktivieren **oder**
-- auf Postgres migrieren.
-
-### Option B: Selbst hosten auf einem VPS (mehr Kontrolle)
-
-1. Ubuntu-Server (z. B. Hetzner, Netcup, DigitalOcean) erstellen.
-2. Python installieren, Repo klonen, App mit `screen`/`tmux` testen.
-3. Mit `systemd` als Dienst laufen lassen.
-4. Nginx als Reverse-Proxy vor die App setzen.
-5. TLS per Let's Encrypt (`certbot`) aktivieren.
-
-Damit bekommen deine Freunde eine sichere URL wie `https://deinedomain.de`.
-
-### Option C: Im Heimnetz selbst hosten
-
-Für "selber Host sein":
-- App auf einem Raspberry Pi oder Mini-PC starten.
-- Router-Portweiterleitung + DynDNS einrichten.
-- Unbedingt TLS (z. B. über Cloudflare Tunnel oder Caddy) nutzen.
-
-Das ist günstig, aber mehr Wartung (Strom, Internet-Ausfälle, Sicherheit).
-
-## Notes
-
-- Uses SQLite (`klotimer.db`) for persistence.
-- Passwords are hashed with PBKDF2-HMAC-SHA256 + random salts.
-- Auth uses HTTP-only session cookies.
-- Includes security headers: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`.
+- **LMB**: Teil/Gruppe ziehen
+- **RMB**: Teil rotieren (90°)
+- **H**: Ghost-Image ein/aus
+- **S**: Fortschritt speichern
+- **L**: Fortschritt laden
+- **R**: Neues Puzzle
+- **C**: Puzzlegröße wechseln (4x4 / 5x5 / 6x6 / 8x8 / 10x10)
+- **T**: Theme wechseln
+- **M**: Modus wechseln
