@@ -19,6 +19,7 @@ Professionelles Jigsaw-Puzzle mit echter Kanten-Geometrie (Nasen/Buchten), Union
   - Modi: `Casual` (größere Snap-Toleranz, Rotation aus), `Classic`, `Expert`
 - Prozedurale Textur (mit NumPy, fallback ohne NumPy).
 - 4 Spielstände (Slots) zum Speichern/Laden.
+- Wenn ein fortgesetztes Puzzle abgeschlossen wird, wird dessen aktiver Slot automatisch gelöscht.
 
 ## Start
 
@@ -39,6 +40,7 @@ python3 app.py
 ### Startmenü
 
 - **Maus**: Klickbare Buttons für Größe, Theme, Modus, Start und Slot-Laden
+- **Maus**: Pro Slot zusätzlich ein **Löschen**-Button, um Spielstände manuell zu entfernen
 - **Hoch/Runter**: Menüpunkt wählen
 - **Links/Rechts**: Wert ändern (Größe/Theme/Modus)
 - **Enter**: Neues Spiel mit den gewählten Einstellungen starten

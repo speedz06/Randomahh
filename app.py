@@ -642,6 +642,8 @@ class MainGame:
         self.menu_cursor = 0
         self.menu_click_targets: Dict[str, pygame.Rect] = {}
         self.manager: Optional[PuzzleManager] = None
+        self.current_slot: Optional[int] = None
+        self.solved_cleanup_done = False
         self.running = True
         self.state = self.STATE_MENU
 
@@ -678,6 +680,7 @@ class MainGame:
         }
         with open(self._slot_path(slot), "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
+        self.current_slot = slot
 
     def _load_slot(self, slot: int) -> bool:
         path = self._slot_path(slot)
@@ -692,11 +695,22 @@ class MainGame:
         self.manager = self._build_manager()
         self.manager.load_state(payload.get("puzzle", {}))
         self.state = self.STATE_PLAY
+        self.current_slot = slot
+        self.solved_cleanup_done = False
         return True
+
+    def _delete_slot(self, slot: int):
+        path = self._slot_path(slot)
+        if os.path.exists(path):
+            os.remove(path)
+        if self.current_slot == slot:
+            self.current_slot = None
 
     def _start_new_game(self):
         self.manager = self._build_manager()
         self.state = self.STATE_PLAY
+        self.current_slot = None
+        self.solved_cleanup_done = False
 
     def run(self):
         while self.running:
@@ -721,6 +735,9 @@ class MainGame:
                 pygame.display.update([pygame.Rect(0, 0, 1040, 58)])
 
                 if self.manager.is_solved():
+                    if not self.solved_cleanup_done and self.current_slot is not None:
+                        self._delete_slot(self.current_slot)
+                        self.solved_cleanup_done = True
                     self._draw_win_banner()
 
             self.clock.tick(60)
@@ -733,11 +750,10 @@ class MainGame:
         count = self.piece_count_options[self.current_piece_idx]
         theme = self.themes[self.current_theme_idx]
         mode_name, _ = self.modes[self.current_mode_idx]
-        info = (
-            "LMB: ziehen | RMB: rotieren | H: Ghost | R: neues Puzzle | "
-            "SHIFT+1..4 speichern | 1..4 laden | ESC: Menü"
-        )
+        info = "LMB: ziehen | RMB: rotieren | H: Ghost | R: neues Puzzle | SHIFT+1..4 speichern | 1..4 laden | ESC: Menü"
         status = f"{count}x{count} | Theme: {theme} | Mode: {mode_name}"
+        if self.current_slot is not None:
+            status += f" | Aktiver Slot: {self.current_slot}"
         text = self.font.render(info, True, (240, 240, 240))
         text2 = self.font.render(status, True, (210, 225, 245))
         bg = pygame.Surface((max(text.get_width(), text2.get_width()) + 16, 54), pygame.SRCALPHA)
@@ -780,10 +796,14 @@ class MainGame:
         self.screen.blit(slot_title, (760, 250))
         for s in range(1, 5):
             exists = self._slot_exists(s)
+            y = 300 + (s - 1) * 92
             label = f"Slot {s} • {'Fortsetzen' if exists else 'Leer'}"
-            rect = pygame.Rect(760, 300 + (s - 1) * 92, 380, 70)
+            rect = pygame.Rect(760, y, 280, 70)
             self._draw_button(rect, label, enabled=exists)
             self.menu_click_targets[f"slot_{s}"] = rect
+            del_rect = pygame.Rect(1050, y, 90, 70)
+            self._draw_button(del_rect, "Löschen", enabled=exists)
+            self.menu_click_targets[f"delete_{s}"] = del_rect
             small = self.font_small.render(f"Klick zum Laden ({s})", True, (150, 166, 198))
             self.screen.blit(small, (780, 342 + (s - 1) * 92))
 
@@ -872,6 +892,9 @@ class MainGame:
                 if self._load_slot(slot):
                     self.manager.draw_full(self.screen)
                     pygame.display.flip()
+            elif key.startswith("delete_"):
+                slot = int(key.split("_")[1])
+                self._delete_slot(slot)
             return
 
     def _menu_adjust(self, direction: int):
