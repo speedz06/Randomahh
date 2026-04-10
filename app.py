@@ -236,7 +236,8 @@ class PuzzleManager:
 
     # ----------------- Aufbau -----------------
     def _create_background_texture(self, w: int, h: int) -> pygame.Surface:
-        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        # Keine per-pixel Transparenz im Quellbild: alle Puzzelteile sollen voll deckend sein.
+        surf = pygame.Surface((w, h))
         if np is not None:
             arr = np.zeros((h, w, 3), dtype=np.uint8)
             x = np.linspace(0, 1, w)
@@ -260,7 +261,6 @@ class PuzzleManager:
                     random.randint(80, 210),
                     random.randint(70, 210),
                     random.randint(90, 220),
-                    random.randint(22, 62),
                 )
                 pygame.draw.circle(surf, col, (cx, cy), rad)
         return surf
