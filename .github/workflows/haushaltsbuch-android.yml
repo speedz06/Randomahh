@@ -39,12 +39,6 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Restore offline HTML asset
-        working-directory: android-haushaltsbuch
-        run: |
-          cat app/src/main/assets/chunks/index.part.* | base64 --decode | gunzip > app/src/main/assets/index.html
-          test -s app/src/main/assets/index.html
-
       - name: Build debug APK
         working-directory: android-haushaltsbuch
         run: gradle :app:assembleDebug --stacktrace
