@@ -10,6 +10,7 @@ wird nach der Installation direkt auf dem Handy importiert.
 ## Offline
 Die App benötigt keine INTERNET-Berechtigung. Der WebView blockiert
 Netzwerkzugriffe und lädt ausschließlich die lokale Datei `app/src/main/assets/index.html`.
+Android-Backups für die App sind deaktiviert.
 
 ## Datensicherung
 - Import: über den Dateiauswahldialog von Android
